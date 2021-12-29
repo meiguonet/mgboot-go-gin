@@ -1,7 +1,7 @@
 package mgboot
 
 import (
-	"github.com/gofiber/fiber/v2"
+	"github.com/gin-gonic/gin"
 	"github.com/meiguonet/mgboot-go-common/AppConf"
 	"github.com/meiguonet/mgboot-go-common/util/castx"
 	"github.com/meiguonet/mgboot-go-common/util/jsonx"
@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-func MidRateLimit(handlerName string, settings interface{}) func(ctx *fiber.Ctx) error {
+func MidRateLimit(handlerName string, settings interface{}) gin.HandlerFunc {
 	var total int
 	var duration time.Duration
 	var limitByIp bool
@@ -42,13 +42,14 @@ func MidRateLimit(handlerName string, settings interface{}) func(ctx *fiber.Ctx)
 		}
 	}
 
-	return func(ctx *fiber.Ctx) error {
+	return func(ctx *gin.Context) {
 		if AppConf.GetBoolean("logging.logMiddlewareRun") {
 			RuntimeLogger().Info("middleware run: mgboot.MidRateLimit")
 		}
 
 		if handlerName == "" || total < 1 || duration < 1 {
-			return ctx.Next()
+			ctx.Next()
+			return
 		}
 
 		req := NewRequest(ctx)
@@ -63,10 +64,10 @@ func MidRateLimit(handlerName string, settings interface{}) func(ctx *fiber.Ctx)
 		result := limiter.GetLimit()
 		remaining := castx.ToInt(result["remaining"])
 
-		if remaining >= 0 {
-			return ctx.Next()
+		if remaining < 0 {
+			panic(NewRateLimitError(result))
 		}
 
-		return NewRateLimitError(result)
+		ctx.Next()
 	}
 }

@@ -2,7 +2,7 @@ package mgboot
 
 import (
 	"fmt"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gin-gonic/gin"
 )
 
 type RateLimitError struct {
@@ -53,11 +53,11 @@ func (ex RateLimitError) RetryAfter() string {
 	return ex.retryAfter
 }
 
-func (ex RateLimitError) AddSpecifyHeaders(ctx *fiber.Ctx) {
-	ctx.Set("X-Ratelimit-Limit", fmt.Sprintf("%d", ex.Total()))
-	ctx.Set("X-Ratelimit-Remaining", fmt.Sprintf("%d", ex.Remaining()))
+func (ex RateLimitError) AddSpecifyHeaders(ctx *gin.Context) {
+	ctx.Header("X-Ratelimit-Limit", fmt.Sprintf("%d", ex.Total()))
+	ctx.Header("X-Ratelimit-Remaining", fmt.Sprintf("%d", ex.Remaining()))
 
 	if ex.RetryAfter() != "" {
-		ctx.Set("Retry-After", ex.RetryAfter())
+		ctx.Header("Retry-After", ex.RetryAfter())
 	}
 }

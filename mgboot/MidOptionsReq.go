@@ -1,24 +1,29 @@
 package mgboot
 
 import (
-	"github.com/gofiber/fiber/v2"
+	"github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin/render"
 	"github.com/meiguonet/mgboot-go-common/AppConf"
+	"strings"
 )
 
-func MidOptionsReq() func(ctx *fiber.Ctx) error {
-	return func(ctx *fiber.Ctx) error {
+func MidOptionsReq() gin.HandlerFunc {
+	return func(ctx *gin.Context) {
 		if AppConf.GetBoolean("logging.logMiddlewareRun") {
 			RuntimeLogger().Info("middleware run: mgboot.MidOptionsReq")
 		}
 
-		if ctx.Method() != "OPTIONS" {
-			return ctx.Next()
+		if strings.ToUpper(ctx.Request.Method) != "OPTIONS" {
+			ctx.Next()
+			return
 		}
 
 		AddCorsSupport(ctx)
 		AddPoweredBy(ctx)
-		ctx.Set(fiber.HeaderContentType, fiber.MIMEApplicationJSONCharsetUTF8)
-		ctx.SendString(`{"code":200}`)
-		return nil
+
+		ctx.Render(200, render.Data{
+			ContentType: "application/json; charset=utf-8",
+			Data:        []byte(`{"code":200}`),
+		})
 	}
 }

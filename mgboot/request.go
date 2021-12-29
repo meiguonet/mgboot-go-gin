@@ -1,12 +1,8 @@
 package mgboot
 
 import (
-	"bufio"
-	"bytes"
 	"github.com/dgrijalva/jwt-go"
-	"github.com/gofiber/fiber/v2"
-	"github.com/gofiber/fiber/v2/utils"
-	"github.com/meiguonet/mgboot-go-common/AppConf"
+	"github.com/gin-gonic/gin"
 	"github.com/meiguonet/mgboot-go-common/enum/RegexConst"
 	"github.com/meiguonet/mgboot-go-common/util/castx"
 	"github.com/meiguonet/mgboot-go-common/util/jsonx"
@@ -21,85 +17,69 @@ import (
 )
 
 type Request struct {
-	ctx *fiber.Ctx
+	ctx *gin.Context
 }
 
-func NewRequest(ctx *fiber.Ctx) *Request {
+func NewRequest(ctx *gin.Context) *Request {
 	return &Request{ctx: ctx}
 }
 
 func (r *Request) GetMethod() string {
-	return r.ctx.Method()
+	return strings.ToUpper(r.ctx.Request.Method)
 }
 
 func (r *Request) GetHeaders() map[string]string {
-	if AppConf.GetBoolean("logging.logGetHeaders") {
-		RuntimeLogger().Debug("raw headers: " + string(r.ctx.Request().Header.RawHeaders()))
+	if len(r.ctx.Request.Header) < 1 {
+		return map[string]string{}
 	}
 
-	buf := make([]byte, 0, len(r.ctx.Request().Header.RawHeaders()))
-	copy(r.ctx.Request().Header.RawHeaders(), buf)
-	reader := bufio.NewReader(bytes.NewReader(buf))
 	headers := map[string]string{}
 
-	for {
-		line, _, err := reader.ReadLine()
-
-		if err != nil {
-			break
-		}
-
-		s1 := string(line)
-
-		if s1 == "" || !strings.Contains(s1, ":") {
+	for name, values := range r.ctx.Request.Header {
+		if len(values) < 1 {
+			headers[name] = ""
 			continue
 		}
 
-		headerName := strings.TrimSpace(stringx.SubstringBefore(s1, ":"))
-		headerValue := strings.TrimSpace(stringx.SubstringAfter(s1, ":"))
-
-		if headerName == "" || headerValue == "" {
-			continue
-		}
-
-		headerName = stringx.Ucwords(headerName, "-", "-")
-		headers[headerName] = headerValue
+		headers[name] = strings.Join(values, ",")
 	}
 
 	return headers
 }
 
 func (r *Request) GetHeader(name string) string {
-	return r.ctx.Get(name)
+	name = strings.ToLower(name)
+	headers := r.GetHeaders()
+
+	for headerName, headerValue := range headers {
+		if strings.ToLower(headerName) == name {
+			return headerValue
+		}
+	}
+
+	return ""
 }
 
 func (r *Request) GetQueryParams() map[string]string {
 	map1 := map[string]string{}
-	buf := r.ctx.Request().URI().QueryString()
+	query := r.ctx.Request.URL.RawQuery
 
-	if len(buf) < 1 {
+	if query == "" {
 		return map1
 	}
 
-	if AppConf.GetBoolean("logging.logGetQueryParams") {
-		RuntimeLogger().Debug("query params: " + string(buf))
+	queryMap, err := url.ParseQuery(query)
+
+	if err != nil {
+		return map1
 	}
 
-	parts := strings.Split(string(buf), "&")
-
-	for _, p := range parts {
-		if !strings.Contains(p, "=") {
+	for key, values := range queryMap {
+		if key == "" || len(values) < 1 {
 			continue
 		}
 
-		name := stringx.SubstringBefore(p, "=")
-		value, err := url.QueryUnescape(stringx.SubstringAfter(p, "+"))
-
-		if err != nil {
-			continue
-		}
-
-		map1[name] = value
+		map1[key] = values[0]
 	}
 
 	return map1
@@ -139,14 +119,8 @@ func (r *Request) GetQueryString(urlencode ...bool) string {
 }
 
 func (r *Request) GetRequestUrl(withQueryString ...bool) string {
-	buf := r.ctx.Request().URI().Path()
-	var s1 string
-
-	if len(buf) < 1 {
-		s1 = "/"
-	} else {
-		s1 = stringx.EnsureLeft(string(buf), "/")
-	}
+	s1 := r.ctx.Request.URL.RequestURI()
+	s1 = stringx.EnsureLeft(s1, "/")
 
 	if len(withQueryString) > 0 && withQueryString[0] {
 		qs := r.GetQueryString()
@@ -161,43 +135,32 @@ func (r *Request) GetRequestUrl(withQueryString ...bool) string {
 
 func (r *Request) GetFormData() map[string]string {
 	map1 := map[string]string{}
-	contentType := r.ctx.Get(fiber.HeaderContentType)
-	contentTypes := []string{fiber.MIMEApplicationForm, fiber.MIMEMultipartForm}
+	r.ctx.PostForm("NonExistsKey")
 
-	if r.ctx.Method() != "POST" || !slicex.InStringSlice(contentType, contentTypes) {
+	if len(r.ctx.Request.PostForm) < 1 {
 		return map1
 	}
 
-	form, err := r.ctx.MultipartForm()
-
-	if err != nil {
-		return map1
-	}
-
-	if AppConf.GetBoolean("logging.logGetFormData") {
-		RuntimeLogger().Debug("form data: " + jsonx.ToJson(form.Value))
-	}
-
-	for name, values := range form.Value {
+	for key, values := range r.ctx.Request.PostForm {
 		if len(values) < 1 {
 			continue
 		}
 
-		map1[name] = values[0]
+		map1[key] = values[0]
 	}
 
 	return map1
 }
 
 func (r *Request) GetClientIp() string {
-	ip := r.ctx.Get(fiber.HeaderXForwardedFor)
+	ip := r.GetHeader("X-Forwarded-For")
 
 	if ip == "" {
-		ip = r.ctx.Get("X-Real-IP")
+		ip = r.GetHeader("X-Real-IP")
 	}
 
 	if ip == "" {
-		ip = r.ctx.IP()
+		ip = r.ctx.ClientIP()
 	}
 
 	regex1 := regexp.MustCompile(RegexConst.CommaSep)
@@ -219,7 +182,13 @@ func (r *Request) PathvariableString(name string, defaultValue ...interface{}) s
 		}
 	}
 
-	return r.ctx.Params(name, dv)
+	value := r.ctx.Param(name)
+
+	if value == "" {
+		return dv
+	}
+
+	return value
 }
 
 func (r *Request) PathvariableBool(name string, defaultValue ...interface{}) bool {
@@ -231,7 +200,7 @@ func (r *Request) PathvariableBool(name string, defaultValue ...interface{}) boo
 		}
 	}
 
-	if b1, err := castx.ToBoolE(r.ctx.Params(name)); err == nil {
+	if b1, err := castx.ToBoolE(r.ctx.Param(name)); err == nil {
 		return b1
 	}
 
@@ -247,7 +216,7 @@ func (r *Request) PathvariableInt(name string, defaultValue ...interface{}) int 
 		}
 	}
 
-	return castx.ToInt(r.ctx.Params(name), dv)
+	return castx.ToInt(r.ctx.Param(name), dv)
 }
 
 func (r *Request) PathvariableInt64(name string, defaultValue ...interface{}) int64 {
@@ -259,7 +228,7 @@ func (r *Request) PathvariableInt64(name string, defaultValue ...interface{}) in
 		}
 	}
 
-	return castx.ToInt64(r.ctx.Params(name), dv)
+	return castx.ToInt64(r.ctx.Param(name), dv)
 }
 
 func (r *Request) PathvariableFloat32(name string, defaultValue ...interface{}) float32 {
@@ -271,7 +240,7 @@ func (r *Request) PathvariableFloat32(name string, defaultValue ...interface{}) 
 		}
 	}
 
-	return castx.ToFloat32(r.ctx.Params(name), dv)
+	return castx.ToFloat32(r.ctx.Param(name), dv)
 }
 
 func (r *Request) PathvariableFloat64(name string, defaultValue ...interface{}) float64 {
@@ -283,7 +252,7 @@ func (r *Request) PathvariableFloat64(name string, defaultValue ...interface{}) 
 		}
 	}
 
-	return castx.ToFloat64(r.ctx.Params(name), dv)
+	return castx.ToFloat64(r.ctx.Param(name), dv)
 }
 
 func (r *Request) ParamString(name string, defaultValue ...interface{}) string {
@@ -464,7 +433,7 @@ func (r *Request) ParamFloat64(name string, defaultValue ...interface{}) float64
 }
 
 func (r *Request) GetJwt() *jwt.Token {
-	token := strings.TrimSpace(r.ctx.Get(fiber.HeaderAuthorization))
+	token := strings.TrimSpace(r.GetHeader("Authorization"))
 	token = stringx.RegexReplace(token, `[\x20\t]+`, " ")
 
 	if strings.Contains(token, " ") {
@@ -488,7 +457,7 @@ func (r *Request) JwtClaimString(name string, defaultValue ...interface{}) strin
 		}
 	}
 
-	token := strings.TrimSpace(r.ctx.Get(fiber.HeaderAuthorization))
+	token := strings.TrimSpace(r.GetHeader("Authorization"))
 	token = stringx.RegexReplace(token, `[\x20\t]+`, " ")
 
 	if strings.Contains(token, " ") {
@@ -511,7 +480,7 @@ func (r *Request) JwtClaimBool(name string, defaultValue ...interface{}) bool {
 		}
 	}
 
-	token := strings.TrimSpace(r.ctx.Get(fiber.HeaderAuthorization))
+	token := strings.TrimSpace(r.GetHeader("Authorization"))
 	token = stringx.RegexReplace(token, `[\x20\t]+`, " ")
 
 	if strings.Contains(token, " ") {
@@ -534,7 +503,7 @@ func (r *Request) JwtClaimInt(name string, defaultValue ...interface{}) int {
 		}
 	}
 
-	token := strings.TrimSpace(r.ctx.Get(fiber.HeaderAuthorization))
+	token := strings.TrimSpace(r.GetHeader("Authorization"))
 	token = stringx.RegexReplace(token, `[\x20\t]+`, " ")
 
 	if strings.Contains(token, " ") {
@@ -557,7 +526,7 @@ func (r *Request) JwtClaimInt64(name string, defaultValue ...interface{}) int64 
 		}
 	}
 
-	token := strings.TrimSpace(r.ctx.Get(fiber.HeaderAuthorization))
+	token := strings.TrimSpace(r.GetHeader("Authorization"))
 	token = stringx.RegexReplace(token, `[\x20\t]+`, " ")
 
 	if strings.Contains(token, " ") {
@@ -580,7 +549,7 @@ func (r *Request) JwtClaimFloat32(name string, defaultValue ...interface{}) floa
 		}
 	}
 
-	token := strings.TrimSpace(r.ctx.Get(fiber.HeaderAuthorization))
+	token := strings.TrimSpace(r.GetHeader("Authorization"))
 	token = stringx.RegexReplace(token, `[\x20\t]+`, " ")
 
 	if strings.Contains(token, " ") {
@@ -603,7 +572,7 @@ func (r *Request) JwtClaimFloat64(name string, defaultValue ...interface{}) floa
 		}
 	}
 
-	token := strings.TrimSpace(r.ctx.Get(fiber.HeaderAuthorization))
+	token := strings.TrimSpace(r.GetHeader("Authorization"))
 	token = stringx.RegexReplace(token, `[\x20\t]+`, " ")
 
 	if strings.Contains(token, " ") {
@@ -618,7 +587,7 @@ func (r *Request) JwtClaimFloat64(name string, defaultValue ...interface{}) floa
 }
 
 func (r *Request) JwtClaimStringSlice(name string) []string {
-	token := strings.TrimSpace(r.ctx.Get(fiber.HeaderAuthorization))
+	token := strings.TrimSpace(r.GetHeader("Authorization"))
 	token = stringx.RegexReplace(token, `[\x20\t]+`, " ")
 
 	if strings.Contains(token, " ") {
@@ -633,7 +602,7 @@ func (r *Request) JwtClaimStringSlice(name string) []string {
 }
 
 func (r *Request) JwtClaimIntSlice(name string) []int {
-	token := strings.TrimSpace(r.ctx.Get(fiber.HeaderAuthorization))
+	token := strings.TrimSpace(r.GetHeader("Authorization"))
 	token = stringx.RegexReplace(token, `[\x20\t]+`, " ")
 
 	if strings.Contains(token, " ") {
@@ -648,10 +617,10 @@ func (r *Request) JwtClaimIntSlice(name string) []int {
 }
 
 func (r *Request) GetRawBody() []byte {
-	method := r.ctx.Method()
-	contentType := strings.ToLower(r.GetHeader(fiber.HeaderContentType))
-	isPostForm := strings.Contains(contentType, fiber.MIMEApplicationForm)
-	isMultipartForm := strings.Contains(contentType, fiber.MIMEMultipartForm)
+	method := r.GetMethod()
+	contentType := strings.ToLower(r.GetHeader("Content-Type"))
+	isPostForm := strings.Contains(contentType, "application/x-www-form-urlencoded")
+	isMultipartForm := strings.Contains(contentType, "multipart/form-data")
 
 	if method == "POST" && (isPostForm || isMultipartForm) {
 		formData := r.GetFormData()
@@ -667,11 +636,6 @@ func (r *Request) GetRawBody() []byte {
 		}
 
 		contents := values.Encode()
-
-		if AppConf.GetBoolean("logging.logGetRawBody") {
-			RuntimeLogger().Debug("raw body: " + contents)
-		}
-
 		return []byte(contents)
 	}
 
@@ -681,59 +645,37 @@ func (r *Request) GetRawBody() []byte {
 		return make([]byte, 0)
 	}
 
-	isJson := strings.Contains(contentType, fiber.MIMEApplicationJSON)
-	isXml1 := strings.Contains(contentType, fiber.MIMEApplicationXML)
-	isXml2 := strings.Contains(contentType, fiber.MIMETextXML)
+	isJson := strings.Contains(contentType, "application/json")
+	isXml1 := strings.Contains(contentType, "application/xml")
+	isXml2 := strings.Contains(contentType, "text/xml")
 
 	if !isJson && !isXml1 && !isXml2 {
 		return make([]byte, 0)
 	}
 
-	var err error
-	var encoding string
-	var body []byte
+	rawBody, ok := r.ctx.Get("requestRawBody")
 
-	r.ctx.Request().Header.VisitAll(func(key, value []byte) {
-		if utils.UnsafeString(key) == fiber.HeaderContentEncoding {
-			encoding = utils.UnsafeString(value)
-		}
-	})
-
-	switch encoding {
-	case fiber.StrGzip:
-		body, err = r.ctx.Request().BodyGunzip()
-	case fiber.StrBr, fiber.StrBrotli:
-		body, err = r.ctx.Request().BodyUnbrotli()
-	case fiber.StrDeflate:
-		body, err = r.ctx.Request().BodyInflate()
-	default:
-		body = r.ctx.Request().Body()
-	}
-
-	if err != nil || len(body) < 1 {
+	if !ok {
 		return make([]byte, 0)
 	}
 
-	buf := make([]byte, 0, len(body))
-	copy(body, buf)
-
-	if AppConf.GetBoolean("logging.logGetRawBody") {
-		RuntimeLogger().Debug("raw body: " + string(buf))
+	if buf, ok := rawBody.([]byte); ok && len(buf) > 0 {
+		return buf
 	}
 
-	return buf
+	return make([]byte, 0)
 }
 
 // @param string[]|string rules
 func (r *Request) GetMap(rules ...interface{}) map[string]interface{} {
-	method := r.ctx.Method()
+	method := r.GetMethod()
 	methods := []string{"POST", "PUT", "PATCH", "DELETE"}
-	contentType := strings.ToLower(r.ctx.Get(fiber.HeaderContentType))
-	isPostForm := strings.Contains(contentType, fiber.MIMEApplicationForm)
-	isMultipartForm := strings.Contains(contentType, fiber.MIMEMultipartForm)
-	isJson := strings.Contains(contentType, fiber.MIMEApplicationJSON)
-	isXml1 := strings.Contains(contentType, fiber.MIMEApplicationXML)
-	isXml2 := strings.Contains(contentType, fiber.MIMETextXML)
+	contentType := strings.ToLower(r.GetHeader("Content-Type"))
+	isPostForm := strings.Contains(contentType, "application/x-www-form-urlencoded")
+	isMultipartForm := strings.Contains(contentType, "multipart/form-data")
+	isJson := strings.Contains(contentType, "application/json")
+	isXml1 := strings.Contains(contentType, "application/xml")
+	isXml2 := strings.Contains(contentType, "text/xml")
 	map1 := map[string]interface{}{}
 
 	if method == "GET" {

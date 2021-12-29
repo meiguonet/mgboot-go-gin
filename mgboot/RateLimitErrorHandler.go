@@ -1,7 +1,5 @@
 package mgboot
 
-import "github.com/gofiber/fiber/v2"
-
 type rateLimitErrorHandler struct {
 }
 
@@ -22,5 +20,5 @@ func (h *rateLimitErrorHandler) MatchError(err error) bool {
 }
 
 func (h *rateLimitErrorHandler) HandleError(_ error) ResponsePayload {
-	return NewHttpErrorResponse(fiber.StatusTooManyRequests)
+	return NewHttpErrorResponse(429)
 }

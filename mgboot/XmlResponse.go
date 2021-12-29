@@ -1,7 +1,5 @@
 package mgboot
 
-import "github.com/gofiber/fiber/v2"
-
 type XmlResponse struct {
 	contents string
 }
@@ -11,7 +9,7 @@ func NewXmlResponse(contents string) XmlResponse {
 }
 
 func (p XmlResponse) GetContentType() string {
-	return fiber.MIMETextXMLCharsetUTF8
+	return "text/xml; charset=utf-8"
 }
 
 func (p XmlResponse) GetContents() (int, string) {

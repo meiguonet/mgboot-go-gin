@@ -1,7 +1,6 @@
 package mgboot
 
 import (
-	"github.com/gofiber/fiber/v2"
 	"github.com/meiguonet/mgboot-go-common/util/jsonx"
 	"strings"
 )
@@ -15,7 +14,7 @@ func NewJsonResponse(payload interface{}) JsonResponse {
 }
 
 func (p JsonResponse) GetContentType() string {
-	return fiber.MIMEApplicationJSONCharsetUTF8
+	return "application/json; charset=utf-8"
 }
 
 func (p JsonResponse) GetContents() (statusCode int, contents string) {

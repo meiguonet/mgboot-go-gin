@@ -2,7 +2,7 @@ package mgboot
 
 import (
 	"fmt"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gin-gonic/gin"
 	"github.com/meiguonet/mgboot-go-common/AppConf"
 	"github.com/meiguonet/mgboot-go-common/logx"
 	"github.com/meiguonet/mgboot-go-common/util/castx"
@@ -77,7 +77,7 @@ func ExecuteTimeLogEnabled() bool {
 	return executeTimeLogLogger != nil
 }
 
-func LogExecuteTime(ctx *fiber.Ctx) {
+func LogExecuteTime(ctx *gin.Context) {
 	if !ExecuteTimeLogEnabled() {
 		return
 	}
@@ -90,7 +90,7 @@ func LogExecuteTime(ctx *fiber.Ctx) {
 	}
 
 	sb := strings.Builder{}
-	sb.WriteString(ctx.Method())
+	sb.WriteString(req.GetMethod())
 	sb.WriteString(" ")
 	sb.WriteString(req.GetRequestUrl(true))
 	sb.WriteString(", total elapsed time: " + elapsedTime)
@@ -164,19 +164,19 @@ func ErrorHandlers() []ErrorHandler {
 	return errorHandlers
 }
 
-func NeedCorsSupport(ctx *fiber.Ctx) bool {
+func NeedCorsSupport(ctx *gin.Context) bool {
 	req := NewRequest(ctx)
 	methods := []string{"PUT", "DELETE", "CONNECT", "OPTIONS", "TRACE", "PATCH"}
 
-	if slicex.InStringSlice(ctx.Method(), methods) {
+	if slicex.InStringSlice(req.GetMethod(), methods) {
 		return true
 	}
 
-	contentType := strings.ToLower(ctx.Get(fiber.HeaderContentType))
+	contentType := strings.ToLower(req.GetHeader("Content-Type"))
 
-	if strings.Contains(contentType, fiber.MIMEApplicationForm) ||
-		strings.Contains(contentType, fiber.MIMEMultipartForm) ||
-		strings.Contains(contentType, fiber.MIMETextPlain) {
+	if strings.Contains(contentType, "application/x-www-form-urlencoded") ||
+		strings.Contains(contentType, "multipart/form-data") ||
+		strings.Contains(contentType, "text/plain") {
 		return true
 	}
 
@@ -200,7 +200,7 @@ func NeedCorsSupport(ctx *fiber.Ctx) bool {
 	return false
 }
 
-func AddCorsSupport(ctx *fiber.Ctx) {
+func AddCorsSupport(ctx *gin.Context) {
 	if !NeedCorsSupport(ctx) {
 		return
 	}
@@ -214,49 +214,50 @@ func AddCorsSupport(ctx *fiber.Ctx) {
 	allowedOrigins := settings.AllowedOrigins()
 
 	if slicex.InStringSlice("*", allowedOrigins) {
-		ctx.Set("Access-Control-Allow-Origin", "*")
+		ctx.Header("Access-Control-Allow-Origin", "*")
 	} else {
-		ctx.Set("Access-Control-Allow-Origin", strings.Join(allowedOrigins, ", "))
+		ctx.Header("Access-Control-Allow-Origin", strings.Join(allowedOrigins, ", "))
 	}
 
 	allowedHeaders := settings.AllowedHeaders()
 
 	if len(allowedHeaders) > 0 {
-		ctx.Set("Access-Control-Allow-Headers", strings.Join(allowedHeaders, ", "))
+		ctx.Header("Access-Control-Allow-Headers", strings.Join(allowedHeaders, ", "))
 	}
 
 	exposedHeaders := settings.ExposedHeaders()
 
 	if len(exposedHeaders) > 0 {
-		ctx.Set("Access-Control-Expose-Headers", strings.Join(exposedHeaders, ", "))
+		ctx.Header("Access-Control-Expose-Headers", strings.Join(exposedHeaders, ", "))
 	}
 
 	maxAge := settings.MaxAge()
 
 	if maxAge > 0 {
 		n1 := castx.ToInt64(maxAge.Seconds())
-		ctx.Set("Access-Control-Max-Age", fmt.Sprintf("%d", n1))
+		ctx.Header("Access-Control-Max-Age", fmt.Sprintf("%d", n1))
 	}
 
 	if settings.AllowCredentials() {
-		ctx.Set("Access-Control-Allow-Credentials", "true")
+		ctx.Header("Access-Control-Allow-Credentials", "true")
 	}
 }
 
-func AddPoweredBy(ctx *fiber.Ctx) {
+func AddPoweredBy(ctx *gin.Context) {
 	poweredBy := AppConf.GetString("app.poweredBy")
 
 	if poweredBy == "" {
 		return
 	}
 
-	ctx.Set("X-Powered-By", poweredBy)
+	ctx.Header("X-Powered-By", poweredBy)
 }
 
-func calcElapsedTime(ctx *fiber.Ctx) string {
+func calcElapsedTime(ctx *gin.Context) string {
 	var execStart time.Time
+	v1, _ := ctx.Get("ExecStart")
 
-	if d1, ok := ctx.Locals("ExecStart").(time.Time); ok {
+	if d1, ok := v1.(time.Time); ok {
 		execStart = d1
 	}
 

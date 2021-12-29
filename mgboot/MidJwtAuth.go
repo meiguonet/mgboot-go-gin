@@ -1,7 +1,7 @@
 package mgboot
 
 import (
-	"github.com/gofiber/fiber/v2"
+	"github.com/gin-gonic/gin"
 	"github.com/meiguonet/mgboot-go-common/AppConf"
 	"github.com/meiguonet/mgboot-go-common/enum/RegexConst"
 	"github.com/meiguonet/mgboot-go-common/util/stringx"
@@ -9,23 +9,25 @@ import (
 	"strings"
 )
 
-func MidJwtAuth(settingsKey string) func(ctx *fiber.Ctx) error {
-	return func(ctx *fiber.Ctx) error {
+func MidJwtAuth(settingsKey string) gin.HandlerFunc {
+	return func(ctx *gin.Context) {
 		if AppConf.GetBoolean("logging.logMiddlewareRun") {
 			RuntimeLogger().Info("middleware run: mgboot.MidJwtAuth")
 		}
 
 		if settingsKey == "" {
-			return ctx.Next()
+			ctx.Next()
+			return
 		}
 
 		settings := GetJwtSettings(settingsKey)
 
 		if settings == nil {
-			return ctx.Next()
+			ctx.Next()
+			return
 		}
 
-		token := strings.TrimSpace(ctx.Get(fiber.HeaderAuthorization))
+		token := strings.TrimSpace(ctx.GetHeader("Authorization"))
 		token = stringx.RegexReplace(token, RegexConst.SpaceSep, " ")
 
 		if strings.Contains(token, " ") {
@@ -33,15 +35,15 @@ func MidJwtAuth(settingsKey string) func(ctx *fiber.Ctx) error {
 		}
 
 		if token == "" {
-			return NewJwtAuthError(JwtVerifyErrno.NotFound)
+			panic(NewJwtAuthError(JwtVerifyErrno.NotFound))
 		}
 
 		errno := VerifyJsonWebToken(token, settings)
 
 		if errno < 0 {
-			return NewJwtAuthError(errno)
+			panic(NewJwtAuthError(errno))
 		}
 
-		return ctx.Next()
+		ctx.Next()
 	}
 }

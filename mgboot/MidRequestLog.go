@@ -1,25 +1,26 @@
 package mgboot
 
 import (
-	"github.com/gofiber/fiber/v2"
+	"github.com/gin-gonic/gin"
 	"github.com/meiguonet/mgboot-go-common/AppConf"
 	"strings"
 )
 
-func MidRequestLog() func(ctx *fiber.Ctx) error {
-	return func(ctx *fiber.Ctx) error {
+func MidRequestLog() gin.HandlerFunc {
+	return func(ctx *gin.Context) {
 		if AppConf.GetBoolean("logging.logMiddlewareRun") {
 			RuntimeLogger().Info("middleware run: mgboot.MidRequestLog")
 		}
 
 		if !RequestLogEnabled() {
-			return ctx.Next()
+			ctx.Next()
+			return
 		}
 
 		req := NewRequest(ctx)
 		logger := RequestLogLogger()
 		sb := strings.Builder{}
-		sb.WriteString(ctx.Method())
+		sb.WriteString(req.GetMethod())
 		sb.WriteString(" ")
 		sb.WriteString(req.GetRequestUrl(true))
 		sb.WriteString(" from ")
@@ -34,6 +35,6 @@ func MidRequestLog() func(ctx *fiber.Ctx) error {
 			}
 		}
 
-		return ctx.Next()
+		ctx.Next()
 	}
 }

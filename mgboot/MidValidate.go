@@ -1,14 +1,14 @@
 package mgboot
 
 import (
-	"github.com/gofiber/fiber/v2"
+	"github.com/gin-gonic/gin"
 	"github.com/meiguonet/mgboot-go-common/AppConf"
 	"github.com/meiguonet/mgboot-go-common/util/jsonx"
 	"github.com/meiguonet/mgboot-go-common/util/validatex"
 	"strings"
 )
 
-func MidValidate(arg0 interface{}) func(ctx *fiber.Ctx) error {
+func MidValidate(arg0 interface{}) gin.HandlerFunc {
 	rules := make([]string, 0)
 	var failfast bool
 
@@ -45,13 +45,14 @@ func MidValidate(arg0 interface{}) func(ctx *fiber.Ctx) error {
 		}
 	}
 
-	return func(ctx *fiber.Ctx) error {
+	return func(ctx *gin.Context) {
 		if AppConf.GetBoolean("logging.logMiddlewareRun") {
 			RuntimeLogger().Info("middleware run: mgboot.MidValidate")
 		}
 
 		if len(rules) < 1 {
-			return ctx.Next()
+			ctx.Next()
+			return
 		}
 
 		validator := validatex.NewValidator()
@@ -62,18 +63,19 @@ func MidValidate(arg0 interface{}) func(ctx *fiber.Ctx) error {
 			errorTips := validatex.FailfastValidate(validator, data, rules)
 
 			if errorTips != "" {
-				return NewValidateError(errorTips, true)
+				panic(NewValidateError(errorTips, true))
 			}
 
-			return ctx.Next()
+			ctx.Next()
+			return
 		}
 
 		validateErrors := validatex.Validate(validator, data, rules)
 
 		if len(validateErrors) > 0 {
-			return NewValidateError(validateErrors)
+			panic(NewValidateError(validateErrors))
 		}
 
-		return ctx.Next()
+		ctx.Next()
 	}
 }

@@ -2,7 +2,7 @@ package mgboot
 
 import (
 	"fmt"
-	"github.com/gofiber/fiber/v2"
+	"github.com/gin-gonic/gin"
 	"github.com/meiguonet/mgboot-go-common/util/mimex"
 	"io/ioutil"
 )
@@ -52,7 +52,7 @@ func NewAttachmentResponseFromBuffer(buf []byte, attachmentFileName string, mime
 
 func (p AttachmentResponse) GetContentType() string {
 	if p.mimeType == "" {
-		return fiber.MIMEOctetStream
+		return "application/octet-stream"
 	}
 
 	return p.mimeType
@@ -70,12 +70,11 @@ func (p AttachmentResponse) Buffer() []byte {
 	return p.buf
 }
 
-func (p AttachmentResponse) AddSpecifyHeaders(ctx *fiber.Ctx) {
+func (p AttachmentResponse) AddSpecifyHeaders(ctx *gin.Context) {
 	disposition := fmt.Sprintf(`attachment; filename="%s"`, p.attachmentFileName)
-	ctx.Set(fiber.HeaderContentType, p.GetContentType())
-	ctx.Set(fiber.HeaderContentLength, fmt.Sprintf("%d", len(p.buf)))
-	ctx.Set(fiber.HeaderTransferEncoding, "binary")
-	ctx.Set(fiber.HeaderContentDisposition, disposition)
-	ctx.Set(fiber.HeaderCacheControl, "no-cache, no-store, max-age=0, must-revalidate")
-	ctx.Set(fiber.HeaderPragma, "public")
+	ctx.Header("Content-Length", fmt.Sprintf("%d", len(p.buf)))
+	ctx.Header("Transfer-Encoding", "binary")
+	ctx.Header("Content-Disposition", disposition)
+	ctx.Header("Cache-Control", "no-cache, no-store, max-age=0, must-revalidate")
+	ctx.Header("Pragma", "public")
 }
